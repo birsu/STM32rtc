@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,9 +58,21 @@ uint16_t i;
 uint32_t adc_val;
 uint8_t gcount = 0;
 
+
+  float adcval;
+	float temperature;
+	double Balance_Res = 9710;
+	double Max_ADC = 4096;
+	double Beta=3950;
+	double Room_Temp=298.15;
+	double Res_Room_Temp=10000;
+	double rThermistor=0;
+	uint32_t temp;
+	double tKelvin;
+	double log_value;
+	
 //char *data[16];
-float tKelvin;
-__IO uint16_t Rx_Data[16];
+__IO uint16_t Rx_Data[1];
 __IO uint16_t Data[1];
 
 uint8_t string[20];
@@ -127,14 +140,7 @@ void setTime(void)   //Reset the Time to 00:00:00 for timer functionality
 	}
 
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) //This routine is called when ADC interrupt occurs
-{
- for(int i = 0; i < 6; i++)
- {
-  adc_val = HAL_ADC_GetValue(&hadc1);
-  HAL_ADC_Stop_IT(&hadc1);
- }
-}
+
 
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)   //This routine is called when alarm interrupt occurs
 {
@@ -248,12 +254,18 @@ void to_do_on_alarm (void)
  	//To Enter Stand by mode
 	//char* data= "Hello World";
 	// just to play with git 2
-	tKelvin=257;
-	HAL_Delay(1000);
-  Data[0]=tKelvin;
-	Flash_Write_Data(0x0801FBF8+i, (uint16_t*)Data);
-  Flash_Read_Data(0x0801FBF8+i, Rx_Data);
-	Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
+		HAL_Delay(100);
+    HAL_ADC_Start(&hadc1);
+		HAL_ADC_PollForConversion(&hadc1, 100);
+		adcval=HAL_ADC_GetValue(&hadc1);
+		rThermistor=Balance_Res*((Max_ADC/adcval)-1);
+		tKelvin=(Beta*Room_Temp)/(Beta + (Room_Temp*log(rThermistor/Res_Room_Temp)));
+		temp=tKelvin-273.15;
+		Rx_Data[0] =temp;
+ 
+	Flash_Write_Data(0x0801FBF8+i, (uint16_t*)Rx_Data);
+ // Flash_Read_Data(0x0801FBF8+i, Rx_Data);
+	//Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
   i=i+2;
 	HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR1,i);
  	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11,GPIO_PIN_SET);
@@ -331,8 +343,7 @@ int main(void)
 	  min = sTime.Minutes;
 	  sec = sTime.Seconds;
 
-	  HAL_ADCEx_Calibration_Start(&hadc1);  //Calibrate ADC before start
-	  HAL_ADC_Start_IT(&hadc1);  //Start Adc in Interrupt Mode
+	  
 
 	  if (alarm)   //Keep watch on alarm timer interrupt
 	  {
