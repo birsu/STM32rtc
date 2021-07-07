@@ -19,6 +19,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -46,13 +47,13 @@ ADC_HandleTypeDef hadc1;
 
 RTC_HandleTypeDef hrtc;
 
-UART_HandleTypeDef huart1;
-
 /* USER CODE BEGIN PV */
 uint8_t hrs;
 uint8_t min;
 uint8_t sec;
-
+uint8_t nowHr;
+uint8_t nowMin;
+uint8_t nowSec;
 uint8_t alarm =0;
 uint16_t i=0;
 uint32_t adc_val;
@@ -73,7 +74,7 @@ uint8_t gcount = 0;
 	
 //char *data[16];
 __IO uint16_t Rx_Data[1];
-__IO uint16_t Data[1];
+__IO uint16_t Data[2];
 
 uint8_t string[20];
 
@@ -83,7 +84,6 @@ uint8_t string[20];
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_RTC_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -92,14 +92,59 @@ static void MX_ADC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void StandbyMode(void) {
+    RTC_AlarmTypeDef sAlarm;
+ /* Disable Wake-up timer */
+    HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN1);
+    
+    /* Disable RTC Alarm */
+   // HAL_RTC_DeactivateAlarm(&hrtc, RTC_ALARM_A);
 
+    /*## Clear all related wakeup flags ######################################*/
+    /* Clear PWR wake up Flag */
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+    
+    /* Clear the Alarm Flag */
+    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRAF);
+
+    /*## Re-enable all used wakeup sources ###################################*/
+    /* Set RTC alarm */
+    if(HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK) 
+    {
+      /* Initialization Error */
+      Error_Handler();
+    }
+
+    /* Enable WKUP pin */
+    HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);
+
+    
+
+    /*## Enter Standby Mode ##################################################*/
+    HAL_PWR_EnterSTANDBYMode();
+  }
+
+
+void get_Time(void)
+	{
+	 RTC_TimeTypeDef myTime;
+	 HAL_RTC_GetTime(&hrtc, &myTime, RTC_FORMAT_BIN);
+	 HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR3 ,0x32F2);
+	 HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR4,myTime.Hours);
+	 HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR5,myTime.Minutes);
+	 HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR6,myTime.Seconds);
+		hrs = myTime.Hours;
+	  min = myTime.Minutes;
+	  sec = myTime.Seconds;
+		
+	}
 void setAlarm(void)  //set alarm to make the controller to go into low power mode
 {
+	get_Time();
 	RTC_AlarmTypeDef sAlarm;
-
-	sAlarm.AlarmTime.Hours = 0x0;
-	sAlarm.AlarmTime.Minutes = 0x0;
-	sAlarm.AlarmTime.Seconds = 0x7;
+	sAlarm.AlarmTime.Hours = hrs;
+	sAlarm.AlarmTime.Minutes = min;
+	sAlarm.AlarmTime.Seconds = sec+10;
 	sAlarm.Alarm = RTC_ALARM_A;
 
 	  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
@@ -112,24 +157,29 @@ void setAlarm(void)  //set alarm to make the controller to go into low power mod
 void setWakeAlarm(void)   //set alarm to wake up the controller from low power mode
 {
 	RTC_AlarmTypeDef sAlarm;
-
-	sAlarm.AlarmTime.Hours = 0x0;
-	sAlarm.AlarmTime.Minutes = 0x0;
-	sAlarm.AlarmTime.Seconds = 0x5;
+//	RTC_TimeTypeDef sTime;
+  get_Time();
+	sAlarm.AlarmTime.Hours = hrs;
+	sAlarm.AlarmTime.Minutes = min;
+	sAlarm.AlarmTime.Seconds = sec+10;
 	sAlarm.Alarm = RTC_ALARM_A;
-
+	HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN1);
+	HAL_RTC_DeactivateAlarm(&hrtc, RTC_ALARM_A);
+	__HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+  __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRAF);
 	  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
 	  {
 		 Error_Handler();
-	   // _Error_Handler(__FILE__, __LINE__);
 	  }
+			   HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1);
+
 }
 
-void setTime(void)   //Reset the Time to 00:00:00 for timer functionality
+void set_time(void)   //Reset the Time to 00:00:00 for timer functionality
 {
 	RTC_TimeTypeDef sTime;
 
-	sTime.Hours = 0x0;
+	sTime.Hours = 0x1;
 	sTime.Minutes = 0x0;
 	sTime.Seconds = 0x0;
 
@@ -137,15 +187,12 @@ void setTime(void)   //Reset the Time to 00:00:00 for timer functionality
 	  {
 		  Error_Handler();
 	  }
+		HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR3, 0x32F2);  // backup register
 	}
 
 
 
 
-void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)   //This routine is called when alarm interrupt occurs
-{
-	alarm = 1; //make alarm variable high to indicate alarm interrupt occurs
-}
 
 
 uint32_t GetPage(uint32_t Address)
@@ -241,19 +288,37 @@ void Flash_Read_Data (uint32_t StartPageAddress, __IO uint16_t * DATA_32)
 		DATA_32++;
 	}
 }
+void to_do_wakeup(void)
+{
+	 	 
+ setWakeAlarm(); //Timer(alarm) to wake up from low power mode
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10,GPIO_PIN_SET);
+	HAL_Delay(300);
+//  HAL_ADC_Start(&hadc1);
+//	HAL_ADC_PollForConversion(&hadc1, 100);
+//	adcval=HAL_ADC_GetValue(&hadc1);
+//	rThermistor=Balance_Res*((Max_ADC/adcval)-1);
+//	tKelvin=(Beta*Room_Temp)/(Beta + (Room_Temp*log(rThermistor/Res_Room_Temp)));
+//	temp=tKelvin-273.15;
+//	Data[0] =temp;
+//	 Data[1]=0x36;
+//	  
+// 
+//	Flash_Write_Data(0x0801FBF8+i, (uint16_t*)Data);
+// // Flash_Read_Data(0x0801FBF8+i, Rx_Data);
+//	//Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
+//  i=i+2;
+//	HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR1,i);
+	  
+    HAL_PWR_EnterSTANDBYMode();
 
+ 	
+}
 void to_do_on_alarm (void)
 {
-	setTime();  //Reset the timer (time)
+	//setTime();  //Reset the timer (time)
  	setWakeAlarm(); //Timer(alarm) to wake up from low power mode
 
- 	//To Enter Stop Mode
-//	HAL_SuspendTick();
-//	HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-
- 	//To Enter Stand by mode
-	//char* data= "Hello World";
-	// just to play with git 2
 		HAL_Delay(100);
     HAL_ADC_Start(&hadc1);
 		HAL_ADC_PollForConversion(&hadc1, 100);
@@ -267,12 +332,15 @@ void to_do_on_alarm (void)
  // Flash_Read_Data(0x0801FBF8+i, Rx_Data);
 	//Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
   i=i+2;
-	HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR1,i);
- 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11,GPIO_PIN_SET);
-	HAL_Delay(3000);
- 	__HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
- 	HAL_PWR_EnterSTANDBYMode();
+	 	 
+    
+    HAL_PWR_EnterSTANDBYMode();
 
+ 	
+}
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)   //This routine is called when alarm interrupt occurs
+{
+	alarm = 1; //make alarm variable high to indicate alarm interrupt occurs
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -315,51 +383,51 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  RTC_TimeTypeDef sTime;
+//  RTC_TimeTypeDef sTime;
 
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_RTC_Init();
-  MX_USART1_UART_Init();
   MX_ADC1_Init();
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
 	// rtc_reg =0
 	i=HAL_RTCEx_BKUPRead(&hrtc,RTC_BKP_DR1);
+	setAlarm();
+  if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR3) != 0x32F2)
+      {
+      //   Set the time
+        set_time();
+      }
+     
+    
 
-  setAlarm();  //Start Trimer to send it to sleep.
-
+    
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+		get_Time();
     /* USER CODE END WHILE */
+		if(alarm)
+	 {
+		to_do_on_alarm();
+		alarm=0;
+	 }
+      else if(HAL_GPIO_ReadPin(GPIOA , GPIO_PIN_2)== SET)
+	    {
+				to_do_wakeup();
+	    }		     
+	      
+		 	 
 
     /* USER CODE BEGIN 3 */
-	  HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);  //To see the timing for debug
-	  hrs = sTime.Hours;
-	  min = sTime.Minutes;
-	  sec = sTime.Seconds;
-
-	  
-
-	  if (alarm)   //Keep watch on alarm timer interrupt
-	  {
-		  to_do_on_alarm();  //function to execute when alarm interrupt goes high
-		  alarm =0;          //reset the alarm variable
-		  setTime(); // Reset the Timer
-		  setAlarm(); //To again in loop send in back to low power mode.
-			
-	  }
-
-
-  }
-  /* USER CODE END 3 */
+	}
 }
-
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -398,9 +466,11 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC
+                              |RCC_PERIPHCLK_USB;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -441,7 +511,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -510,39 +580,6 @@ static void MX_RTC_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -560,7 +597,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
@@ -569,22 +606,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  /*Configure GPIO pins : PA2 PA3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA11 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11;
+  /*Configure GPIO pin : PA10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
 }
 
