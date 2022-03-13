@@ -74,7 +74,9 @@ uint8_t gcount = 0;
 	
 //char *data[16];
 __IO uint16_t Rx_Data[1];
-__IO uint16_t Data[2];
+__IO uint16_t Data[1];
+__IO uint16_t Time[1];
+
 
 uint8_t string[20];
 
@@ -291,26 +293,26 @@ void Flash_Read_Data (uint32_t StartPageAddress, __IO uint16_t * DATA_32)
 void to_do_wakeup(void)
 {
 	 	 
- setWakeAlarm(); //Timer(alarm) to wake up from low power mode
+  setWakeAlarm(); //Timer(alarm) to wake up from low power mode
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10,GPIO_PIN_SET);
 	HAL_Delay(300);
-//  HAL_ADC_Start(&hadc1);
-//	HAL_ADC_PollForConversion(&hadc1, 100);
-//	adcval=HAL_ADC_GetValue(&hadc1);
-//	rThermistor=Balance_Res*((Max_ADC/adcval)-1);
-//	tKelvin=(Beta*Room_Temp)/(Beta + (Room_Temp*log(rThermistor/Res_Room_Temp)));
-//	temp=tKelvin-273.15;
-//	Data[0] =temp;
-//	 Data[1]=0x36;
-//	  
-// 
-//	Flash_Write_Data(0x0801FBF8+i, (uint16_t*)Data);
-// // Flash_Read_Data(0x0801FBF8+i, Rx_Data);
-//	//Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
-//  i=i+2;
-//	HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR1,i);
+  HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 100);
+	adcval=HAL_ADC_GetValue(&hadc1);
+	rThermistor=Balance_Res*((Max_ADC/adcval)-1);
+	tKelvin=(Beta*Room_Temp)/(Beta + (Room_Temp*log(rThermistor/Res_Room_Temp)));
+	temp=tKelvin-273.15;
+	Data[0] =temp;
+	Time[0]=0x36;
+	Flash_Write_Data(0x0801FBF8+i, (uint16_t*)Data);
+ // Flash_Read_Data(0x0801FBF8+i, Rx_Data);
+	//Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
+  i=i+2;
+	Flash_Write_Data(0x0801FBF8+i, (uint16_t*)Data);
+	i+=2;
+	HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR1,i);
 	  
-    HAL_PWR_EnterSTANDBYMode();
+  HAL_PWR_EnterSTANDBYMode();
 
  	
 }
@@ -332,9 +334,8 @@ void to_do_on_alarm (void)
  // Flash_Read_Data(0x0801FBF8+i, Rx_Data);
 	//Convert_To_Str((uint16_t*)Rx_Data, (char*)string);
   i=i+2;
-	 	 
-    
-    HAL_PWR_EnterSTANDBYMode();
+  HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR1,i);    
+  HAL_PWR_EnterSTANDBYMode();
 
  	
 }
